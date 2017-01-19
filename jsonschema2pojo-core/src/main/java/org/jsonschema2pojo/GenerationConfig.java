@@ -277,6 +277,14 @@ public interface GenerationConfig {
     boolean isParcelable();
 
     /**
+     * Gets the React-Native 'WriteableMap' configuration option.
+     *
+     * @return Whether to make the generated types 'WriteableMap' (for Android
+     *         development)
+     */
+    boolean isWriteableMap();
+
+    /**
      * Gets the 'serializable' configuration option.
      *
      * @return Whether to make the generated types 'serializable'

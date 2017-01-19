@@ -32,6 +32,9 @@ import com.sun.codemodel.JDocCommentable;
 import com.sun.codemodel.JFieldVar;
 import com.sun.codemodel.JPackage;
 import com.sun.codemodel.JType;
+import org.jsonschema2pojo.util.WritableMapHelper;
+
+import java.util.HashMap;
 
 /**
  * Provides factory/creation methods for the code generation rules.
@@ -43,6 +46,7 @@ public class RuleFactory {
     private Annotator annotator;
     private SchemaStore schemaStore;
 
+    private HashMap<String, String> requiredMap;
     /**
      * Create a new rule factory with the given generation config options.
      *
@@ -56,11 +60,17 @@ public class RuleFactory {
      * @param schemaStore
      *            the object used by this factory to get and store schemas
      */
-    public RuleFactory(GenerationConfig generationConfig, Annotator annotator, SchemaStore schemaStore) {
+    public RuleFactory(GenerationConfig generationConfig, Annotator annotator, SchemaStore schemaStore, HashMap<String, String> requiredMap) {
         this.generationConfig = generationConfig;
         this.annotator = annotator;
         this.schemaStore = schemaStore;
         this.nameHelper = new NameHelper(generationConfig);
+
+        this.requiredMap = requiredMap;
+    }
+
+    public RuleFactory(GenerationConfig generationConfig, Annotator annotator, SchemaStore schemaStore) {
+        this(generationConfig, annotator, schemaStore, new HashMap<String, String>());
     }
 
     /**
@@ -69,7 +79,11 @@ public class RuleFactory {
      * @see DefaultGenerationConfig
      */
     public RuleFactory() {
-        this(new DefaultGenerationConfig(), new Jackson2Annotator(new DefaultGenerationConfig()), new SchemaStore());
+        this(new DefaultGenerationConfig(), new Jackson2Annotator(new DefaultGenerationConfig()), new SchemaStore(), new HashMap<String, String>());
+    }
+
+    public HashMap<String, String> getRequiredMap() {
+        return requiredMap;
     }
 
     /**
@@ -119,7 +133,7 @@ public class RuleFactory {
      * @return a schema rule that can handle the "object" declaration.
      */
     public Rule<JPackage, JType> getObjectRule() {
-        return new ObjectRule(this, new ParcelableHelper());
+        return new ObjectRule(this, new ParcelableHelper(), new WritableMapHelper());
     }
 
     /**

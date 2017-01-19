@@ -61,7 +61,9 @@ public class PropertiesRule implements Rule<JDefinedClass, JDefinedClass> {
         for (Iterator<String> properties = node.fieldNames(); properties.hasNext(); ) {
             String property = properties.next();
 
-            ruleFactory.getPropertyRule().apply(property, node.get(property), jclass, schema);
+            String path = nodeName + "." + property;
+
+            ruleFactory.getPropertyRule().apply(path, node.get(property), jclass, schema);
         }
 
         if (ruleFactory.getGenerationConfig().isGenerateBuilders()) {

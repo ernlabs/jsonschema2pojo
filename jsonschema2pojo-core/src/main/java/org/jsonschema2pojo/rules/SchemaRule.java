@@ -21,6 +21,8 @@ import org.jsonschema2pojo.Schema;
 import com.sun.codemodel.JClassContainer;
 import com.sun.codemodel.JType;
 
+import java.util.HashMap;
+
 /**
  * Applies a JSON schema.
  * 
@@ -63,6 +65,8 @@ public class SchemaRule implements Rule<JClassContainer, JType> {
                 return schema.getJavaType();
             }
 
+            /** Util file generation */ ruleFactory.getObjectRule().apply("Util", schemaNode, generatableType.getPackage(), schema);
+
             return apply(nodeName, schemaNode, generatableType, schema);
         }
 
@@ -70,6 +74,20 @@ public class SchemaRule implements Rule<JClassContainer, JType> {
         if (schemaNode.has("enum")) {
             javaType = ruleFactory.getEnumRule().apply(nodeName, schemaNode, generatableType, schema);
         } else {
+            if (schemaNode.has("required")) {
+                JsonNode requiredArray = schemaNode.get("required");
+
+                if (requiredArray.isArray()) {
+                    HashMap<String, String> requiredMap = ruleFactory.getRequiredMap();
+
+                    for (JsonNode requiredEntry : requiredArray) {
+                        if (requiredEntry.isTextual()) {
+                            requiredMap.put(nodeName + "." + requiredEntry.asText(), nodeName);
+                        }
+                    }
+                }
+            }
+
             javaType = ruleFactory.getTypeRule().apply(nodeName, schemaNode, generatableType.getPackage(), schema);
         }
         schema.setJavaTypeIfEmpty(javaType);

@@ -210,6 +210,14 @@ public class DefaultGenerationConfig implements GenerationConfig {
      * @return <code>false</code>
      */
     @Override
+    public boolean isWriteableMap() {
+        return false;
+    }
+
+    /**
+     * @return <code>false</code>
+     */
+    @Override
     public boolean isSerializable() {
         return false;
     }

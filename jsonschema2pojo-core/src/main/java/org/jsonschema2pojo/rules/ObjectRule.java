@@ -1,12 +1,12 @@
 /**
  * Copyright © 2010-2014 Nokia
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,29 +30,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.sun.codemodel.*;
 import org.jsonschema2pojo.AnnotationStyle;
 import org.jsonschema2pojo.Schema;
 import org.jsonschema2pojo.exception.ClassAlreadyExistsException;
-import org.jsonschema2pojo.util.NameHelper;
-import org.jsonschema2pojo.util.ParcelableHelper;
-import org.jsonschema2pojo.util.SerializableHelper;
+import org.jsonschema2pojo.util.*;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.sun.codemodel.ClassType;
-import com.sun.codemodel.JAnnotationUse;
-import com.sun.codemodel.JBlock;
-import com.sun.codemodel.JClass;
-import com.sun.codemodel.JClassAlreadyExistsException;
-import com.sun.codemodel.JDefinedClass;
-import com.sun.codemodel.JExpr;
-import com.sun.codemodel.JFieldVar;
-import com.sun.codemodel.JInvocation;
-import com.sun.codemodel.JMethod;
-import com.sun.codemodel.JMod;
-import com.sun.codemodel.JPackage;
-import com.sun.codemodel.JType;
-import com.sun.codemodel.JVar;
 
 import android.os.Parcelable;
 
@@ -60,17 +45,19 @@ import android.os.Parcelable;
  * Applies the generation steps required for schemas of type "object".
  *
  * @see <a href=
- *      "http://tools.ietf.org/html/draft-zyp-json-schema-03#section-5.1">http:/
- *      /tools.ietf.org/html/draft-zyp-json-schema-03#section-5.1</a>
+ * "http://tools.ietf.org/html/draft-zyp-json-schema-03#section-5.1">http:/
+ * /tools.ietf.org/html/draft-zyp-json-schema-03#section-5.1</a>
  */
 public class ObjectRule implements Rule<JPackage, JType> {
 
     private final RuleFactory ruleFactory;
     private final ParcelableHelper parcelableHelper;
+    private final WritableMapHelper mapHelper;
 
-    protected ObjectRule(RuleFactory ruleFactory, ParcelableHelper parcelableHelper) {
+    protected ObjectRule(RuleFactory ruleFactory, ParcelableHelper parcelableHelper, WritableMapHelper mapHelper) {
         this.ruleFactory = ruleFactory;
         this.parcelableHelper = parcelableHelper;
+        this.mapHelper = mapHelper;
     }
 
     /**
@@ -82,6 +69,12 @@ public class ObjectRule implements Rule<JPackage, JType> {
      */
     @Override
     public JType apply(String nodeName, JsonNode node, JPackage _package, Schema schema) {
+        if ("Util".equals(nodeName)) {
+            mapHelper.createUtil(ruleFactory, node, _package, schema);
+            mapHelper.createException(ruleFactory, node, _package, schema);
+
+            return null;
+        }
 
         JType superType = getSuperType(nodeName, node, _package, schema);
 
@@ -139,6 +132,10 @@ public class ObjectRule implements Rule<JPackage, JType> {
             addParcelSupport(jclass);
         }
 
+        if (ruleFactory.getGenerationConfig().isWriteableMap()) {
+            addWriteableMapSupport(jclass);
+        }
+
         if (ruleFactory.getGenerationConfig().isIncludeConstructors()) {
             addConstructors(jclass, node, schema, ruleFactory.getGenerationConfig().isConstructorsRequiredPropertiesOnly());
         }
@@ -159,6 +156,11 @@ public class ObjectRule implements Rule<JPackage, JType> {
         parcelableHelper.addCreator(jclass);
     }
 
+    private void addWriteableMapSupport(JDefinedClass jclass) {
+        mapHelper.addWriteToMap(jclass);
+        mapHelper.addCreateFromMap(jclass);
+    }
+
     /**
      * Retrieve the list of properties to go in the constructor from node. This
      * is all properties listed in node["properties"] if ! onlyRequired, and
@@ -168,7 +170,6 @@ public class ObjectRule implements Rule<JPackage, JType> {
      * @return
      */
     private LinkedHashSet<String> getConstructorProperties(JsonNode node, Schema schema, boolean onlyRequired) {
-
         if (!node.has("properties")) {
             return new LinkedHashSet<String>();
         }
@@ -178,9 +179,9 @@ public class ObjectRule implements Rule<JPackage, JType> {
 
         // setup the set of required properties for draft4 style "required"
         if (onlyRequired && node.has("required")) {
-            JsonNode requiredArray =  node.get("required");
+            JsonNode requiredArray = node.get("required");
             if (requiredArray.isArray()) {
-                for (JsonNode requiredEntry: requiredArray) {
+                for (JsonNode requiredEntry : requiredArray) {
                     if (requiredEntry.isTextual()) {
                         draft4RequiredProperties.add(requiredEntry.asText());
                     }
@@ -189,7 +190,7 @@ public class ObjectRule implements Rule<JPackage, JType> {
         }
 
         NameHelper nameHelper = ruleFactory.getNameHelper();
-        for (Iterator<Map.Entry<String, JsonNode>> properties = node.get("properties").fields(); properties.hasNext();) {
+        for (Iterator<Map.Entry<String, JsonNode>> properties = node.get("properties").fields(); properties.hasNext(); ) {
             Map.Entry<String, JsonNode> property = properties.next();
 
             JsonNode propertyObj = property.getValue();
@@ -231,21 +232,17 @@ public class ObjectRule implements Rule<JPackage, JType> {
     /**
      * Creates a new Java class that will be generated.
      *
-     * @param nodeName
-     *            the node name which may be used to dictate the new class name
-     * @param node
-     *            the node representing the schema that caused the need for a
-     *            new class. This node may include a 'javaType' property which
-     *            if present will override the fully qualified name of the newly
-     *            generated class.
-     * @param _package
-     *            the package which may contain a new class after this method
-     *            call
+     * @param nodeName the node name which may be used to dictate the new class name
+     * @param node     the node representing the schema that caused the need for a
+     *                 new class. This node may include a 'javaType' property which
+     *                 if present will override the fully qualified name of the newly
+     *                 generated class.
+     * @param _package the package which may contain a new class after this method
+     *                 call
      * @return a reference to a newly created class
-     * @throws ClassAlreadyExistsException
-     *             if the given arguments cause an attempt to create a class
-     *             that already exists, either on the classpath or in the
-     *             current map of classes to be generated.
+     * @throws ClassAlreadyExistsException if the given arguments cause an attempt to create a class
+     *                                     that already exists, either on the classpath or in the
+     *                                     current map of classes to be generated.
      */
     private JDefinedClass createClass(String nodeName, JsonNode node, JPackage _package) throws ClassAlreadyExistsException {
 
@@ -398,29 +395,66 @@ public class ObjectRule implements Rule<JPackage, JType> {
         hashCode.annotate(Override.class);
     }
 
-    private void addConstructors(JDefinedClass jclass, JsonNode node, Schema schema, boolean onlyRequired) {
-
-        LinkedHashSet<String> classProperties = getConstructorProperties(node, schema, onlyRequired);
-        LinkedHashSet<String> combinedSuperProperties = getSuperTypeConstructorPropertiesRecursive(node, schema, onlyRequired);
-
-        // no properties to put in the constructor => default constructor is good enough.
-        if (classProperties.isEmpty() && combinedSuperProperties.isEmpty()) {
-            return;
-        }
-
+    private void buildNoArgsPrivateConstructor(JDefinedClass jclass) {
         // add a no-args constructor for serialization purposes
-        JMethod noargsConstructor = jclass.constructor(JMod.PUBLIC);
+        JMethod noargsConstructor = jclass.constructor(JMod.PRIVATE);
         noargsConstructor.javadoc().add("No args constructor for use in serialization");
+    }
+
+    private void buildRequiredArgsPublicConstructor(JDefinedClass jclass, LinkedHashSet<String> optionalProperties, LinkedHashSet<String> requiredroperties) {
+        JClass exceptionClass = jclass.owner().ref("RequiredFieldException");
 
         // add the public constructor with property parameters
-        JMethod fieldsConstructor = jclass.constructor(JMod.PUBLIC);
+        JMethod fieldsConstructor = jclass.constructor(JMod.PUBLIC)._throws(exceptionClass);
+
         JBlock constructorBody = fieldsConstructor.body();
-        JInvocation superInvocation = constructorBody.invoke("super");
+        constructorBody.invoke("super");
 
         Map<String, JFieldVar> fields = jclass.fields();
         Map<String, JVar> classFieldParams = new HashMap<String, JVar>();
 
-        for (String property : classProperties) {
+        for (String property : optionalProperties) {
+            JFieldVar field = fields.get(property);
+
+            if (field == null) {
+                throw new IllegalStateException("Property " + property + " hasn't been added to JDefinedClass before calling addConstructors");
+            }
+
+            if (requiredroperties.contains(property)) {
+                fieldsConstructor.javadoc().addParam(property);
+                JVar param = fieldsConstructor.param(field.type(), field.name());
+                constructorBody.assign(JExpr._this().ref(field), param);
+                classFieldParams.put(property, param);
+
+                final JExpression inst = makeImpression("Util");
+
+                JInvocation invoc = JExpr._new(jclass);
+                constructorBody.invoke(inst, "assertValid").arg(JExpr._this().ref(field));
+            }
+        }
+    }
+
+    private JExpression makeImpression(final String expression) {
+        return new JExpressionImpl() {
+            public void generate(JFormatter f) {
+                f.p(expression);
+            }
+        };
+    }
+
+    private void buildArgsPrivateConstructor(JDefinedClass jclass, LinkedHashSet<String> optionalProperties, LinkedHashSet<String> requiredroperties) {
+        JClass exceptionClass = jclass.owner().ref("RequiredFieldException");
+
+        JMethod fieldsConstructor = jclass.constructor(requiredroperties.size() == 0 ? JMod.PUBLIC : JMod.PRIVATE)._throws(exceptionClass);
+        Map<String, JVar>  classFieldParams = new HashMap<String, JVar>();
+
+        // add the public constructor with property parameters
+        JBlock constructorBody = fieldsConstructor.body();
+        JInvocation localSuperInvocation = requiredroperties.size() == 0 ? constructorBody.invoke("super") : constructorBody.invoke("this");
+
+        Map<String, JFieldVar> fields = jclass.fields();
+
+        for (String property : optionalProperties) {
             JFieldVar field = fields.get(property);
 
             if (field == null) {
@@ -429,39 +463,67 @@ public class ObjectRule implements Rule<JPackage, JType> {
 
             fieldsConstructor.javadoc().addParam(property);
             JVar param = fieldsConstructor.param(field.type(), field.name());
-            constructorBody.assign(JExpr._this().ref(field), param);
-            classFieldParams.put(property, param);
-        }
 
-        List<JVar> superConstructorParams = new ArrayList<JVar>();
-
-
-        for (String property : combinedSuperProperties) {
-            JFieldVar field = searchSuperClassesForField(property, jclass);
-
-            if (field == null) {
-                throw new IllegalStateException("Property " + property + " hasn't been added to JDefinedClass before calling addConstructors");
+            if (requiredroperties.contains(property)) {
+                localSuperInvocation.arg(param);
             }
-
-            JVar param = classFieldParams.get(property);
-
-            if (param == null) {
-                param = fieldsConstructor.param(field.type(), field.name());
+            else {
+                constructorBody.assign(JExpr._this().ref(field), param);
+                classFieldParams.put(property, param);
             }
-
-            fieldsConstructor.javadoc().addParam(property);
-            superConstructorParams.add(param);
-        }
-
-        for (JVar param : superConstructorParams) {
-            superInvocation.arg(param);
         }
     }
 
-    private static JDefinedClass definedClassOrNullFromType(JType type)
-    {
-        if (type == null || type.isPrimitive())
-        {
+    //        Util.assertValid(name);
+
+    private void addConstructors(JDefinedClass jclass, JsonNode node, Schema schema, boolean onlyRequired) {
+        LinkedHashSet<String> classProperties = getConstructorProperties(node, schema, false);
+        LinkedHashSet<String> reqClassProperties = getConstructorProperties(node, schema, true);
+        LinkedHashSet<String> combinedSuperProperties = getSuperTypeConstructorPropertiesRecursive(node, schema, onlyRequired);
+
+        // no properties to put in the constructor => default constructor is good enough.
+        if (classProperties.isEmpty() && combinedSuperProperties.isEmpty()) {
+            return;
+        }
+
+        buildNoArgsPrivateConstructor(jclass);
+
+        if (reqClassProperties.size() > 0) {
+            buildRequiredArgsPublicConstructor(jclass, classProperties, reqClassProperties);
+        }
+
+        // Do we need the full private constructor
+        if (classProperties.size() > reqClassProperties.size()) {
+            buildArgsPrivateConstructor(jclass, classProperties, reqClassProperties);
+        }
+
+// REMOVED FOR NOW - SEE HOW TO HANDLE THIS BETTER
+// REMOVED FOR NOW - SEE HOW TO HANDLE THIS BETTER
+//
+//        List<JVar> superConstructorParams = new ArrayList<JVar>();
+//
+//        for (String property : combinedSuperProperties) {
+//            JFieldVar field = searchSuperClassesForField(property, jclass);
+//
+//            if (field == null) {
+//                throw new IllegalStateException("Property " + property + " hasn't been added to JDefinedClass before calling addConstructors");
+//            }
+//
+//            JVar param = classFieldParams.get(property);
+//
+//            if (param == null) {
+//                param = fieldsConstructor.param(field.type(), field.name());
+//            }
+//
+//            fieldsConstructor.javadoc().addParam(property);
+//            superConstructorParams.add(param);
+//        }
+// REMOVED FOR NOW - SEE HOW TO HANDLE THIS BETTER
+// REMOVED FOR NOW - SEE HOW TO HANDLE THIS BETTER
+    }
+
+    private static JDefinedClass definedClassOrNullFromType(JType type) {
+        if (type == null || type.isPrimitive()) {
             return null;
         }
         JClass fieldClass = type.boxify();
